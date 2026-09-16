@@ -1,5 +1,7 @@
 """Regression tests for Bounty Plaza #1509 reference semantics."""
 
+import math
+
 import pytest
 
 from reference_model import (
@@ -43,6 +45,17 @@ def test_quantize_uint8_uses_nearest_even_rounding() -> None:
     assert quantize_uint8_value(3.5, 1.0, 0) == 4
 
 
+def test_quantize_uint8_negative_zero_stays_zero() -> None:
+    negative_zero = math.copysign(0.0, -1.0)
+    assert quantize_uint8_value(negative_zero, 1.0, 0) == 0
+
+
+def test_quantize_uint8_ties_with_zero_point() -> None:
+    assert quantize_uint8_value(-0.5, 1.0, 2) == 2
+    assert quantize_uint8_value(0.5, 1.0, 2) == 2
+    assert quantize_uint8_value(1.5, 1.0, 2) == 4
+
+
 def test_requantize_uint8_negative_result_saturates_to_zero() -> None:
     assert requantize_uint8_value(-12, 1.0, 0, 1.0, 0) == 0
 
@@ -54,6 +67,12 @@ def test_requantize_uint8_exact_formula_and_bounds() -> None:
 
 def test_requantize_uint8_with_nontrivial_scales() -> None:
     assert requantize_uint8_value(20, 0.5, 4, 0.25, 10) == 42
+
+
+@pytest.mark.parametrize("value", [-128, -100, -32, -1, 0, 1, 32, 100, 127])
+def test_requantize_uint8_covers_int8_input_domain(value: int) -> None:
+    expected = max(0, value)
+    assert requantize_uint8_value(value, 1.0, 0, 1.0, 0) == expected
 
 
 @pytest.mark.parametrize(
