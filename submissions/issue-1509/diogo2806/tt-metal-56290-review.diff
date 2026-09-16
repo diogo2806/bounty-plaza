@@ -1,0 +1,277 @@
+# Review-oriented diff snippets for tt-metal #56290
+# Source of truth for application: apply_tt_metal_56290.py
+# Base: tenstorrent/tt-metal@86b46910d8bd13ca6ec8144048d9323b474ee68a
+
+### tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,3 +1,4 @@
+ constexpr std::uint32_t QUANT_REPLAY_LEN = 3;
+-constexpr std::uint32_t QUANT_REPLAY_LEN_INT8_OUT = 7;
++constexpr std::uint32_t QUANT_REPLAY_LEN_UINT8_OUT = 4;
++constexpr std::uint32_t QUANT_REPLAY_LEN_INT8_OUT = 5;
+ constexpr std::uint32_t QUANT_REPLAY_LEN_MAX = QUANT_REPLAY_LEN_INT8_OUT;
+
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,3 +1,4 @@
+ constexpr std::uint32_t REQUANT_REPLAY_LEN = 4;
+-constexpr std::uint32_t REQUANT_REPLAY_LEN_INT8_OUT = 8;
++constexpr std::uint32_t REQUANT_REPLAY_LEN_UINT8_OUT = 5;
++constexpr std::uint32_t REQUANT_REPLAY_LEN_INT8_OUT = 6;
+ constexpr std::uint32_t REQUANT_REPLAY_LEN_MAX = REQUANT_REPLAY_LEN_INT8_OUT;
+
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1 +1,6 @@
+ inline void _int8_input_unbias_() { TTI_SFPXOR(0, p_sfpu::LREG4, p_sfpu::LREG0, 0); }
++
++inline void _uint8_clamp_negatives_() {
++    // SFPSWAP mode 9 writes max(LCONST_0, LREG0) back to LREG0.
++    TTI_SFPSWAP(0, p_sfpu::LCONST_0, p_sfpu::LREG0, 9);
++}
+
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,4 +1,2 @@
+-    TTI_SFPSETCC(0, p_sfpu::LREG0, 0, sfpi::SFPSETCC_MOD1_LREG_LT0);
+-    TTI_SFPMOV(0, p_sfpu::LCONST_0, p_sfpu::LREG0, 0);
+-    TTI_SFPENCC(0, 0, 0, 0);
++    _uint8_clamp_negatives_();
+     TTI_SFP_STOCH_RND(
+
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,2 +1,6 @@
+-template <bool APPROXIMATION_MODE, int ITERATIONS = 8, bool SIGN_MAGNITUDE_FORMAT = false>
++template <
++    bool APPROXIMATION_MODE,
++    int ITERATIONS = 8,
++    bool SIGN_MAGNITUDE_FORMAT = false,
++    DataFormat OUTPUT_FORMAT = DataFormat::Int32>
+ inline void calculate_quant_int32(
+
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,2 +1,5 @@
++    static_assert(
++        OUTPUT_FORMAT == DataFormat::Int32 || OUTPUT_FORMAT == DataFormat::UInt8,
++        "calculate_quant_int32 OUTPUT_FORMAT must be Int32 or UInt8");
+     constexpr InstrModLoadStore out_mode =
+         SIGN_MAGNITUDE_FORMAT ? InstrModLoadStore::INT32 : InstrModLoadStore::INT32_2S_COMP;
+
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1 +1,3 @@
+-        lltt::replay(QUANT_REPLAY_SLOT, QUANT_REPLAY_LEN);                        // MAD + SFPNOP + STOCH_RND
++        constexpr std::uint32_t replay_len =
++            OUTPUT_FORMAT == DataFormat::UInt8 ? QUANT_REPLAY_LEN_UINT8_OUT : QUANT_REPLAY_LEN;
++        lltt::replay(QUANT_REPLAY_SLOT, replay_len);
+
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,2 +1,7 @@
+-template <bool APPROXIMATION_MODE, int ITERATIONS = 8, bool SIGN_MAGNITUDE_FORMAT = false, bool INT8_INPUT = false>
++template <
++    bool APPROXIMATION_MODE,
++    int ITERATIONS = 8,
++    bool SIGN_MAGNITUDE_FORMAT = false,
++    bool INT8_INPUT = false,
++    DataFormat OUTPUT_FORMAT = DataFormat::Int32>
+ inline void calculate_requant_int32(
+
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,2 +1,5 @@
++    static_assert(
++        OUTPUT_FORMAT == DataFormat::Int32 || OUTPUT_FORMAT == DataFormat::UInt8,
++        "calculate_requant_int32 OUTPUT_FORMAT must be Int32 or UInt8");
+     constexpr InstrModLoadStore int_mode =
+         (SIGN_MAGNITUDE_FORMAT && !INT8_INPUT) ? InstrModLoadStore::INT32 : InstrModLoadStore::INT32_2S_COMP;
+
+--- a/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1 +1,3 @@
+-        lltt::replay(REQUANT_REPLAY_SLOT, REQUANT_REPLAY_LEN);      // CAST + MAD + SFPNOP + STOCH_RND
++        constexpr std::uint32_t replay_len =
++            OUTPUT_FORMAT == DataFormat::UInt8 ? REQUANT_REPLAY_LEN_UINT8_OUT : REQUANT_REPLAY_LEN;
++        lltt::replay(REQUANT_REPLAY_SLOT, replay_len);
+
+### tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,4 +1,5 @@
+ constexpr std::uint32_t QUANT_REPLAY_LEN_2S_COMP = 4;
+ constexpr std::uint32_t QUANT_REPLAY_LEN_SIGN_MAGN = 2;
+-constexpr std::uint32_t QUANT_REPLAY_LEN_INT8_OUT = 6;
+-constexpr std::uint32_t QUANT_REPLAY_LEN_MAX = QUANT_REPLAY_LEN_INT8_OUT;
++constexpr std::uint32_t QUANT_REPLAY_LEN_UINT8_OUT = 3;
++constexpr std::uint32_t QUANT_REPLAY_LEN_INT8_OUT = 4;
++constexpr std::uint32_t QUANT_REPLAY_LEN_MAX = QUANT_REPLAY_LEN_2S_COMP;
+
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,6 +1,8 @@
+ constexpr std::uint32_t REQUANT_REPLAY_LEN_2S_COMP = 7;
+ constexpr std::uint32_t REQUANT_REPLAY_LEN_SIGN_MAGN = 3;
++constexpr std::uint32_t REQUANT_REPLAY_LEN_UINT8_SIGN_MAGN = 4;
++constexpr std::uint32_t REQUANT_REPLAY_LEN_UINT8_2S_COMP = 6;
+ constexpr std::uint32_t REQUANT_REPLAY_LEN_INT8_IN = 5;
+-constexpr std::uint32_t REQUANT_REPLAY_LEN_INT8_OUT = 7;
+-constexpr std::uint32_t REQUANT_REPLAY_LEN_INT8_OUT_INT32_IN = 9;
+-constexpr std::uint32_t REQUANT_REPLAY_LEN_MAX = REQUANT_REPLAY_LEN_INT8_OUT_INT32_IN;
++constexpr std::uint32_t REQUANT_REPLAY_LEN_INT8_OUT = 5;
++constexpr std::uint32_t REQUANT_REPLAY_LEN_INT8_OUT_INT32_IN = 7;
++constexpr std::uint32_t REQUANT_REPLAY_LEN_MAX = REQUANT_REPLAY_LEN_2S_COMP;
+
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1 +1,5 @@
+ inline void _int8_input_unbias_() { TTI_SFPXOR(0, p_sfpu::LREG3, p_sfpu::LREG0, 0); }
++
++inline void _uint8_clamp_negatives_() {
++    TTI_SFPSWAP(0, p_sfpu::LCONST_0, p_sfpu::LREG0, 9);
++}
+
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,4 +1,2 @@
+-    TTI_SFPSETCC(0, p_sfpu::LREG0, 0, sfpi::SFPSETCC_MOD1_LREG_LT0);
+-    TTI_SFPMOV(0, p_sfpu::LCONST_0, p_sfpu::LREG0, 0);
+-    TTI_SFPENCC(0, 0, 0, 0);
++    _uint8_clamp_negatives_();
+     TTI_SFP_STOCH_RND(
+
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1 +1,4 @@
+-    constexpr std::uint32_t REPLAY_LEN = SIGN_MAGNITUDE_FORMAT ? QUANT_REPLAY_LEN_SIGN_MAGN : QUANT_REPLAY_LEN_2S_COMP;
++    constexpr std::uint32_t REPLAY_LEN = OUTPUT_FORMAT == DataFormat::UInt8
++                                             ? QUANT_REPLAY_LEN_UINT8_OUT
++                                             : (SIGN_MAGNITUDE_FORMAT ? QUANT_REPLAY_LEN_SIGN_MAGN
++                                                                      : QUANT_REPLAY_LEN_2S_COMP);
+
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1 +1,2 @@
+         if constexpr (OUTPUT_FORMAT == DataFormat::UInt8) {
++            _uint8_clamp_negatives_();
+             TTI_SFP_STOCH_RND(
+
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1 +1 @@
+-        if constexpr (!SIGN_MAGNITUDE_FORMAT) {
++        if constexpr (!SIGN_MAGNITUDE_FORMAT && OUTPUT_FORMAT != DataFormat::UInt8) {
+
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1,3 +1,6 @@
+-    constexpr std::uint32_t REPLAY_LEN =
+-        INT8_INPUT ? REQUANT_REPLAY_LEN_INT8_IN
+-                   : (SIGN_MAGNITUDE_FORMAT ? REQUANT_REPLAY_LEN_SIGN_MAGN : REQUANT_REPLAY_LEN_2S_COMP);
++    constexpr std::uint32_t REPLAY_LEN = OUTPUT_FORMAT == DataFormat::UInt8
++                                             ? ((SIGN_MAGNITUDE_FORMAT || INT8_INPUT)
++                                                    ? REQUANT_REPLAY_LEN_UINT8_SIGN_MAGN
++                                                    : REQUANT_REPLAY_LEN_UINT8_2S_COMP)
++                                             : (INT8_INPUT ? REQUANT_REPLAY_LEN_INT8_IN
++                                                           : (SIGN_MAGNITUDE_FORMAT ? REQUANT_REPLAY_LEN_SIGN_MAGN
++                                                                                   : REQUANT_REPLAY_LEN_2S_COMP));
+
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1 +1,2 @@
+         if constexpr (OUTPUT_FORMAT == DataFormat::UInt8) {
++            _uint8_clamp_negatives_();
+             TTI_SFP_STOCH_RND(
+
+--- a/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
++++ b/tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h
+@@ -1 +1 @@
+-        if constexpr (!SIGN_MAGNITUDE_FORMAT) {
++        if constexpr (!SIGN_MAGNITUDE_FORMAT && OUTPUT_FORMAT != DataFormat::UInt8) {
+
+### tt_metal/hw/inc/api/compute/quantization.h
+--- a/tt_metal/hw/inc/api/compute/quantization.h
++++ b/tt_metal/hw/inc/api/compute/quantization.h
+@@ -1,4 +1,16 @@
+ ALWI void quant_tile(uint32_t idst0, uint32_t idst1, uint32_t odst) {
+     MATH((SFPU_BINARY_CALL(
+         DST_SYNC_MODE, DST_ACCUM_MODE, calculate_quant_int32, (APPROX), idst0, idst1, odst, VectorMode::RC)));
+ }
++
++ALWI void quant_uint8_tile(uint32_t idst0, uint32_t idst1, uint32_t odst) {
++    MATH((SFPU_BINARY_CALL(
++        DST_SYNC_MODE,
++        DST_ACCUM_MODE,
++        calculate_quant_int32,
++        (APPROX, 8 /*ITERATIONS*/, false /*SIGN_MAGNITUDE_FORMAT*/, DataFormat::UInt8),
++        idst0,
++        idst1,
++        odst,
++        VectorMode::RC)));
++}
+
+--- a/tt_metal/hw/inc/api/compute/quantization.h
++++ b/tt_metal/hw/inc/api/compute/quantization.h
+@@ -1,4 +1,16 @@
+ ALWI void requant_tile(uint32_t idst0, uint32_t idst1, uint32_t odst) {
+     MATH((SFPU_BINARY_CALL(
+         DST_SYNC_MODE, DST_ACCUM_MODE, calculate_requant_int32, (APPROX), idst0, idst1, odst, VectorMode::RC)));
+ }
++
++ALWI void requant_uint8_tile(uint32_t idst0, uint32_t idst1, uint32_t odst) {
++    MATH((SFPU_BINARY_CALL(
++        DST_SYNC_MODE,
++        DST_ACCUM_MODE,
++        calculate_requant_int32,
++        (APPROX, 8 /*ITERATIONS*/, false /*SIGN_MAGNITUDE_FORMAT*/, false /*INT8_INPUT*/, DataFormat::UInt8),
++        idst0,
++        idst1,
++        odst,
++        VectorMode::RC)));
++}
+
+### ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_program_factory.cpp
+--- a/ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_program_factory.cpp
++++ b/ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_program_factory.cpp
+@@ -1,3 +1,3 @@
+         if (c_dtype == DataType::UINT8) {
+-            compute_kernel_defines["BINARY_SFPU_INIT"] = std::string("quant_uint8_tile_init") + quant_zp_arg;
++            set_sfpu_op("quant_uint8_tile_init", "quant_uint8_tile");
+         } else if (c_dtype == DataType::INT8) {
+
+--- a/ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_program_factory.cpp
++++ b/ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_program_factory.cpp
+@@ -1,6 +1,4 @@
+         } else if (c_dtype == DataType::UINT8) {
+-            // uint8 output uses the standard packer narrowing (int32 SFPU result -> uint8), so it reuses
+-            // the int32-output op body; only the init differs, to select FP32_TO_UINT8 rounding.
+             set_sfpu_op(
+                 int8_in ? "requant_int8_in_uint8_out_tile_init" : "requant_uint8_tile_init",
+-                int8_in ? "requant_int8_in_tile" : "requant_tile");
++                int8_in ? "requant_int8_in_uint8_out_tile" : "requant_uint8_tile");
+
+### ttnn/cpp/ttnn/operations/eltwise/quantization/quantization.cpp
+--- a/ttnn/cpp/ttnn/operations/eltwise/quantization/quantization.cpp
++++ b/ttnn/cpp/ttnn/operations/eltwise/quantization/quantization.cpp
+@@ -1,2 +1,2 @@
+-// Narrow composite's fp result to the output dtype. Use quantize as the narrowing step
+-// for int8 until typecast(int32 -> int8) is enabled (#50401).
++// Narrow composite fp results with saturating quantization for int8/uint8.
++// Direct narrow typecasts can wrap instead of respecting quantization bounds.
+
+--- a/ttnn/cpp/ttnn/operations/eltwise/quantization/quantization.cpp
++++ b/ttnn/cpp/ttnn/operations/eltwise/quantization/quantization.cpp
+@@ -1,3 +1,3 @@
+-    if (c_dtype != ttnn::DataType::INT8) {
++    if (!is_narrow_quantized_dtype(c_dtype)) {
+         return ttnn::typecast(shifted, c_dtype, memory_config, optional_output_tensor);
+     }
+
+--- a/ttnn/cpp/ttnn/operations/eltwise/quantization/quantization.cpp
++++ b/ttnn/cpp/ttnn/operations/eltwise/quantization/quantization.cpp
+@@ -1,2 +1,2 @@
+-        ttnn::DataType::INT8,
++        c_dtype,
+         memory_config,
