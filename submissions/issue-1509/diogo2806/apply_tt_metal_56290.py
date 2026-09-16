@@ -8,9 +8,32 @@ Each edit must match the expected source exactly; otherwise the script aborts.
 from __future__ import annotations
 
 import argparse
+import hashlib
 from pathlib import Path
 
 Replacement = tuple[str, str] | tuple[str, str, int]
+
+
+EXPECTED_BLOBS = {
+    "tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h": "755935fb1c891387195019bccee1e3c01b6e2860",
+    "tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h": "cf7b95dcb7d3d7e4cd68f17abd389ac861f4e51f",
+    "tt_metal/hw/inc/api/compute/quantization.h": "3d770c9c1535cd47f72619019a9203484fed3b6b",
+    "ttnn/cpp/ttnn/operations/eltwise/binary_ng/device/binary_ng_program_factory.cpp": "37453fbb0ae10023a20659bc2623a4b1c18e785e",
+    "ttnn/cpp/ttnn/operations/eltwise/quantization/quantization.cpp": "7389f5d307c2856fa6e620b79ef9a24b1d025999",
+}
+
+
+def _git_blob_sha(data: bytes) -> str:
+    header = f"blob {len(data)}\0".encode()
+    return hashlib.sha1(header + data).hexdigest()
+
+
+def _verify_blob(path: Path, expected_sha: str) -> None:
+    actual = _git_blob_sha(path.read_bytes())
+    if actual != expected_sha:
+        raise RuntimeError(
+            f"source drift detected for {path}: expected blob {expected_sha}, got {actual}"
+        )
 
 
 def _replace(text: str, old: str, new: str, path: Path, occurrences: int = 1) -> str:
@@ -511,8 +534,8 @@ def test_quantize_uint8_rounding_ties(device):
     )
 
 
-def apply_fix(root: Path) -> None:
-    """Apply all issue #56290 changes to a tt-metal checkout."""
+def apply_fix(root: Path, verify_only: bool = False) -> None:
+    """Validate the pinned tt-metal source and optionally apply issue #56290."""
     files = {
         "tt_metal/hw/ckernels/wormhole_b0/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h": _wormhole_replacements(),
         "tt_metal/hw/ckernels/blackhole/metal/llk_api/llk_sfpu/ckernel_sfpu_quant.h": _blackhole_replacements(),
@@ -524,15 +547,23 @@ def apply_fix(root: Path) -> None:
         path = root / relative
         if not path.is_file():
             raise FileNotFoundError(path)
-        _apply(path, replacements)
-    _write_upstream_regression_test(root)
+        _verify_blob(path, EXPECTED_BLOBS[relative])
+        if not verify_only:
+            _apply(path, replacements)
+    if not verify_only:
+        _write_upstream_regression_test(root)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Apply tt-metal #56290 fix")
+    parser = argparse.ArgumentParser(description="Validate/apply tt-metal #56290 fix")
     parser.add_argument("checkout", type=Path, help="Path to a tt-metal checkout")
+    parser.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="Validate the pinned upstream source blobs without writing files",
+    )
     args = parser.parse_args()
-    apply_fix(args.checkout.resolve())
+    apply_fix(args.checkout.resolve(), verify_only=args.verify_only)
 
 
 if __name__ == "__main__":
